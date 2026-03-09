@@ -4,7 +4,7 @@ https://wesleyhsieh0806.github.io/
 You are free to refer to this implementation or reach out to discuss any questions.
 Copying everything directly is not recommended as I don't want to be called out by your Stanford professor.
 
-Meanwhile, a lot of the blocks could be referred to Llama3's implementation.
+Meanwhile, a lot of the blocks could refer to Llama3's implementation.
     https://github.com/meta-llama/llama3/blob/main/llama/model.py
 Happy learning!
 """
