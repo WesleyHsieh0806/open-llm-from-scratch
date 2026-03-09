@@ -28,8 +28,11 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    # We avoid import globally to ensure efficiency.
+    from cs336_basics.model import Linear
+    model = Linear(d_in, d_out)
+    model.load_state_dict({"W": weights})
+    return model(in_features)
 
 
 def run_embedding(
@@ -50,8 +53,10 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    from cs336_basics.model import Embedding
+    token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+    token_embeddings.load_state_dict({"weight": weights})
+    return token_embeddings(token_ids)
 
 
 def run_swiglu(
@@ -200,7 +205,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    from cs336_basics.model import RotaryPositionalEncoding
+    apply_rope = RotaryPositionalEncoding(theta, d_k, max_seq_len)
+    return apply_rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
