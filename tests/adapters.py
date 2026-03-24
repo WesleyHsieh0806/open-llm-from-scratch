@@ -31,7 +31,7 @@ def run_linear(
     # We avoid import globally to ensure efficiency.
     from cs336_basics.model import Linear
     model = Linear(d_in, d_out)
-    model.load_state_dict({"W": weights})
+    model.load_state_dict({"weight": weights})
     return model(in_features)
 
 
@@ -81,14 +81,12 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    # Example:
-    # If your state dict keys match, you can use `load_state_dict()`
-    # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
-    # swiglu.w1.weight.data = w1_weight
-    # swiglu.w2.weight.data = w2_weight
-    # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.model import FeedForwardNetwork
+    swiglu_ffn = FeedForwardNetwork(d_model, d_ff)
+    swiglu_ffn.w1.weight.data = w1_weight
+    swiglu_ffn.w2.weight.data = w2_weight
+    swiglu_ffn.w3.weight.data = w3_weight
+    return swiglu_ffn(in_features)
 
 
 def run_scaled_dot_product_attention(

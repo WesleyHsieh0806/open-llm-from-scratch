@@ -19,18 +19,18 @@ class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, device=None, dtype=None):
         super().__init__()
         # Row-major ordering (d_out, d_in) to match paper notation.
-        self.W = nn.Parameter(torch.zeros((out_features, in_features), dtype=dtype, device=device))
+        self.weight = nn.Parameter(torch.zeros((out_features, in_features), dtype=dtype, device=device))
         
         # Weight initialization.
         std = math.sqrt(2 / (in_features + out_features))
-        nn.init.trunc_normal_(self.W, 
+        nn.init.trunc_normal_(self.weight, 
                             std=std, 
                             a=(-3*std), b=(3*std))
 
     def forward(self,
                 x: Float[Tensor, "... in_features"]
         ) -> Float[Tensor, "... out_features"]:
-        return x @ self.W.T
+        return x @ self.weight.T
 
 class Embedding(nn.Module):
     def __init__(self, num_embeddings: int, embedding_dim: int, device=None, dtype=None):
@@ -81,6 +81,22 @@ class SiLU(nn.Module):
         if self.inplace:
             return x.mul_(torch.sigmoid(x))
         return x * torch.sigmoid(x)
+
+class FeedForwardNetwork(nn.Module):
+    """SwiGLU feedforward layer"""
+    def __init__(self, d_model: int, d_ff: int = None, device=None, dtype=None):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff or (8 * d_model// 3)
+
+        self.w1 = Linear(d_model, d_ff)
+        self.w2 = Linear(d_ff, d_model)
+        self.w3 = Linear(d_model, d_ff)
+        self.silu = SiLU()
+
+    def forward(self, x):
+        x = self.silu(self.w1(x)) * self.w3(x)
+        return self.w2(x)
 
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
