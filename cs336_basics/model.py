@@ -48,7 +48,29 @@ class Embedding(nn.Module):
         # Pytorch's advanced indexing feature allows you to do this.
         return self.weight[token_ids]
 
-
+class RMSNorm(nn.Module):
+    def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
+        """RMSNorm layer
+        RMSNorm(a_i) = \frac{a_i}{RMS(a_i)}g_i
+        RMS(a_i) = torch.sqrt(torch.sum(a_i ** 2, dim=-1) / d_model + eps)
+        """
+        super().__init__()
+        self.eps = eps
+        self.gamma = nn.Parameter(torch.ones((d_model), dtype=dtype, device=device))
+        
+    def forward(self, x: Float[Tensor, "... d_model"]):
+        in_dtype = x.dtype
+        dim = x.shape[-1]
+        
+        # Convert to float32
+        x = x.to(torch.float32)
+        mean_square_x = torch.sum(x ** 2, dim=-1, keepdim=True) / dim
+        rms_x =  torch.sqrt(mean_square_x + self.eps)
+        output = x / rms_x * self.gamma
+        
+        # Convert back to original dtype
+        return output.to(in_dtype)
+    
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
         """A more elegant way is to implement RoPE using complex numbers, where
