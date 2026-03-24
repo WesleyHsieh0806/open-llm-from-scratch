@@ -70,7 +70,18 @@ class RMSNorm(nn.Module):
         
         # Convert back to original dtype
         return output.to(in_dtype)
-    
+
+class SiLU(nn.Module):
+    """Swish Activation Function"""
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+
+    def forward(self, x):
+        if self.inplace:
+            return x.mul_(torch.sigmoid(x))
+        return x * torch.sigmoid(x)
+
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
         """A more elegant way is to implement RoPE using complex numbers, where
