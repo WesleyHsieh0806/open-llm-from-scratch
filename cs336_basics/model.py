@@ -15,38 +15,43 @@ from einops import rearrange
 from torch import Tensor
 from jaxtyping import Float, Int
 
+
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, device=None, dtype=None):
         super().__init__()
         # Row-major ordering (d_out, d_in) to match paper notation.
-        self.weight = nn.Parameter(torch.zeros((out_features, in_features), dtype=dtype, device=device))
-        
+        self.weight = nn.Parameter(torch.zeros(
+            (out_features, in_features), dtype=dtype, device=device))
+
         # Weight initialization.
         std = math.sqrt(2 / (in_features + out_features))
-        nn.init.trunc_normal_(self.weight, 
-                            std=std, 
-                            a=(-3*std), b=(3*std))
+        nn.init.trunc_normal_(self.weight,
+                              std=std,
+                              a=(-3*std), b=(3*std))
 
     def forward(self,
                 x: Float[Tensor, "... in_features"]
-        ) -> Float[Tensor, "... out_features"]:
+                ) -> Float[Tensor, "... out_features"]:
         return x @ self.weight.T
+
 
 class Embedding(nn.Module):
     def __init__(self, num_embeddings: int, embedding_dim: int, device=None, dtype=None):
         super().__init__()
-        self.weight = nn.Parameter(torch.zeros((num_embeddings, embedding_dim), dtype=dtype, device=device)) 
+        self.weight = nn.Parameter(torch.zeros(
+            (num_embeddings, embedding_dim), dtype=dtype, device=device))
 
         # Initializaiton.
         nn.init.trunc_normal_(self.weight,
-                             std=1.0,
-                             a=(-3.0),
-                             b=(3.0))
-        
+                              std=1.0,
+                              a=(-3.0),
+                              b=(3.0))
+
     def forward(self, token_ids: Int[Tensor, "batch seq_len"]
                 ) -> Float[Tensor, "batch seq_len embedding_dim"]:
         # Pytorch's advanced indexing feature allows you to do this.
         return self.weight[token_ids]
+
 
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
@@ -56,23 +61,26 @@ class RMSNorm(nn.Module):
         """
         super().__init__()
         self.eps = eps
-        self.gamma = nn.Parameter(torch.ones((d_model), dtype=dtype, device=device))
-        
+        self.gamma = nn.Parameter(torch.ones(
+            (d_model), dtype=dtype, device=device))
+
     def forward(self, x: Float[Tensor, "... d_model"]):
         in_dtype = x.dtype
         dim = x.shape[-1]
-        
+
         # Convert to float32
         x = x.to(torch.float32)
         mean_square_x = torch.sum(x ** 2, dim=-1, keepdim=True) / dim
-        rms_x =  torch.sqrt(mean_square_x + self.eps)
+        rms_x = torch.sqrt(mean_square_x + self.eps)
         output = x / rms_x * self.gamma
-        
+
         # Convert back to original dtype
         return output.to(in_dtype)
 
+
 class SiLU(nn.Module):
     """Swish Activation Function"""
+
     def __init__(self, inplace=False):
         super().__init__()
         self.inplace = inplace
@@ -82,12 +90,14 @@ class SiLU(nn.Module):
             return x.mul_(torch.sigmoid(x))
         return x * torch.sigmoid(x)
 
+
 class FeedForwardNetwork(nn.Module):
     """SwiGLU feedforward layer"""
+
     def __init__(self, d_model: int, d_ff: int = None, device=None, dtype=None):
         super().__init__()
         self.d_model = d_model
-        self.d_ff = d_ff or (8 * d_model// 3)
+        self.d_ff = d_ff or (8 * d_model // 3)
 
         self.w1 = Linear(d_model, d_ff)
         self.w2 = Linear(d_ff, d_model)
@@ -97,6 +107,7 @@ class FeedForwardNetwork(nn.Module):
     def forward(self, x):
         x = self.silu(self.w1(x)) * self.w3(x)
         return self.w2(x)
+
 
 class RotaryPositionalEncoding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
@@ -110,8 +121,9 @@ class RotaryPositionalEncoding(nn.Module):
         4. Register buffer for sin and cos.
         """
         super().__init__()
-        token_positions= torch.arange(max_seq_len, device=device)
-        freqs = 1.0 / torch.exp(torch.arange(0, d_k, 2, device=device) / d_k * math.log(theta))
+        token_positions = torch.arange(max_seq_len, device=device)
+        freqs = 1.0 / torch.exp(torch.arange(0, d_k, 2,
+                                device=device) / d_k * math.log(theta))
         angles = torch.outer(token_positions, freqs)
 
         sin = angles.sin()
@@ -120,8 +132,8 @@ class RotaryPositionalEncoding(nn.Module):
         self.register_buffer("sin", sin)  # (max_seq_len, d_k // 2)
         self.register_buffer("cos", cos)
 
-    def forward(self, 
-                x: Float[Tensor, "batch seq_len d_k"], 
+    def forward(self,
+                x: Float[Tensor, "batch seq_len d_k"],
                 token_positions: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len d_k"]:
         """Applying RoPE to the input tensor x."""
         sin = self.sin[token_positions]  # (B, seq_len, d_k // 2)
@@ -134,5 +146,3 @@ class RotaryPositionalEncoding(nn.Module):
             sin * x[..., 0] + cos * x[..., 1],
         ], dim=-1)  # (B, seq_len, d_k // 2, 2)
         return rearrange(x, "... d_div_two two -> ... (d_div_two two)")
-
-        
