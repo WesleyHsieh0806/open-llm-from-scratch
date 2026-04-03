@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 from torch import Tensor
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Bool
 
 
 class Linear(nn.Module):
@@ -99,9 +99,9 @@ class FeedForwardNetwork(nn.Module):
         self.d_model = d_model
         self.d_ff = d_ff or (8 * d_model // 3)
 
-        self.w1 = Linear(d_model, d_ff)
-        self.w2 = Linear(d_ff, d_model)
-        self.w3 = Linear(d_model, d_ff)
+        self.w1 = Linear(d_model, d_ff, device, dtype)
+        self.w2 = Linear(d_ff, d_model, device, dtype)
+        self.w3 = Linear(d_model, d_ff, device, dtype)
         self.silu = SiLU()
 
     def forward(self, x):
@@ -134,8 +134,13 @@ class RotaryPositionalEncoding(nn.Module):
 
     def forward(self,
                 x: Float[Tensor, "batch seq_len d_k"],
-                token_positions: Int[Tensor, "batch seq_len"]) -> Float[Tensor, "batch seq_len d_k"]:
+                token_positions: Int[Tensor, "batch seq_len"] | None = None) -> Float[Tensor, "batch seq_len d_k"]:
         """Applying RoPE to the input tensor x."""
+        if token_positions is None:
+            token_positions = torch.arange(x.shape[-2], device=x.device)
+            token_positions = token_positions.reshape(
+                (1,) * (x.ndim - 2) + token_positions.shape)
+
         sin = self.sin[token_positions]  # (B, seq_len, d_k // 2)
         cos = self.cos[token_positions]
 
@@ -146,3 +151,86 @@ class RotaryPositionalEncoding(nn.Module):
             sin * x[..., 0] + cos * x[..., 1],
         ], dim=-1)  # (B, seq_len, d_k // 2, 2)
         return rearrange(x, "... d_div_two two -> ... (d_div_two two)")
+
+
+def softmax(x: Float, dim: int = -1) -> Float:
+    # Subtract x with the maximum along a dimension
+    max_x = x.max(dim=dim, keepdim=True)[0]
+    x = x - max_x
+    return torch.exp(x) / torch.sum(torch.exp(x), dim=dim, keepdim=True)
+
+
+def scaled_dot_product_attention(
+    Q: Float[Tensor, "... seq_len d_k"],
+    K: Float[Tensor, "... seq_len d_k"],
+    V: Float[Tensor, "... seq_len d_v"],
+    mask: Bool[Tensor, "... seq_len seq_len"] = None
+) -> Float[Tensor, "... seq_len d_v"]:
+    """Scaled dot-product attention."""
+    # (... seq_len seq_len)
+    attention_score = (Q @ K.transpose(-2, -1)) / math.sqrt(Q.shape[-1])
+
+    # Apply masking.
+    if mask is not None:
+        attention_score = attention_score.masked_fill(
+            ~mask, torch.finfo(attention_score.dtype).min)
+
+    # (... seq_len seq_len)
+    weight = softmax(attention_score, dim=-1)
+    return weight @ V
+
+
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 1024, rope_theta=None, device=None, dtype=None):
+        super().__init__()
+
+        self.d_model = d_model
+        self.num_heads = num_heads
+
+        self.q_proj = Linear(d_model, d_model, device, dtype)
+        self.k_proj = Linear(d_model, d_model, device, dtype)
+        self.v_proj = Linear(d_model, d_model, device, dtype)
+        self.o_proj = Linear(d_model, d_model, device, dtype)
+
+        # Create causal mask.
+        self.mask = torch.tril(torch.ones(
+            (max_seq_len, max_seq_len), device=device, dtype=torch.bool))
+
+        # Rope will be applied equally to each head.
+        self.use_rope = rope_theta is not None
+        if self.use_rope:
+            self.rope = RotaryPositionalEncoding(
+                theta=rope_theta,
+                d_k=d_model // num_heads,
+                max_seq_len=max_seq_len,
+                device=device)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"],
+                token_positions: Int[Tensor, "... seq_len"] | None = None) -> Float[Tensor, "... seq_len d_model"]:
+        seq_len = x.shape[-2]
+
+        # project query, key, value
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        # Convert the shape for multi-head attention
+        q = rearrange(
+            q, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads, d_k=self.d_model // self.num_heads)
+        k = rearrange(
+            k, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads, d_k=self.d_model // self.num_heads)
+        v = rearrange(
+            v, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads, d_k=self.d_model // self.num_heads)
+
+        # Apply RoPE.
+        if self.use_rope:
+            q = self.rope(q, token_positions)
+            k = self.rope(k, token_positions)
+
+        mask = self.mask[:seq_len, :seq_len]
+
+        # Multi-head attention.
+        output = scaled_dot_product_attention(q, k, v, mask)
+        output = rearrange(
+            output, "... h seq_len d_v -> ... seq_len (h d_v)")
+        return self.o_proj(output)

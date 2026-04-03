@@ -54,7 +54,8 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     from cs336_basics.model import Embedding
-    token_embeddings = Embedding(num_embeddings=vocab_size, embedding_dim=d_model)
+    token_embeddings = Embedding(
+        num_embeddings=vocab_size, embedding_dim=d_model)
     token_embeddings.load_state_dict({"weight": weights})
     return token_embeddings(token_ids)
 
@@ -107,7 +108,8 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    from cs336_basics.model import scaled_dot_product_attention
+    return scaled_dot_product_attention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -141,7 +143,14 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.model import MultiHeadSelfAttention
+    attn = MultiHeadSelfAttention(d_model, num_heads)
+
+    attn.q_proj.weight.data = q_proj_weight
+    attn.k_proj.weight.data = k_proj_weight
+    attn.v_proj.weight.data = v_proj_weight
+    attn.o_proj.weight.data = o_proj_weight
+    return attn(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -181,7 +190,14 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.model import MultiHeadSelfAttention
+    attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta)
+
+    attn.q_proj.weight.data = q_proj_weight
+    attn.k_proj.weight.data = k_proj_weight
+    attn.v_proj.weight.data = v_proj_weight
+    attn.o_proj.weight.data = o_proj_weight
+    return attn(in_features, token_positions)
 
 
 def run_rope(
@@ -441,7 +457,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.model import softmax
+    return softmax(in_features, dim=dim)
 
 
 def run_cross_entropy(
