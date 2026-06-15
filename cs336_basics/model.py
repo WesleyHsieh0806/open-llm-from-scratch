@@ -72,6 +72,8 @@ class RMSNorm(nn.Module):
         x = x.to(torch.float32)
         mean_square_x = torch.sum(x ** 2, dim=-1, keepdim=True) / dim
         rms_x = torch.sqrt(mean_square_x + self.eps)
+        
+        # Affine transformation (Ax+b) without bias.
         output = x / rms_x * self.weight
 
         # Convert back to original dtype
@@ -252,3 +254,44 @@ class TransformerBlock(nn.Module):
         x = x + self.attn(self.ln1(x))
         x = x + self.ffn(self.ln2(x))
         return x
+
+
+class TransformerLM(nn.Module):
+    def __init__(self,
+                 vocab_size: int,
+                 context_length: int,
+                 d_model: int,
+                 num_layers: int,
+                 num_heads: int,
+                 d_ff: int,
+                 rope_theta: int,
+                 ):
+        super().__init__()
+        self.vocab_size = vocab_size
+
+        self.token_embeddings = Embedding(vocab_size, d_model)
+
+        self.layers = nn.ModuleList()
+        for _ in range(num_layers):
+            self.layers.append(
+                TransformerBlock(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    d_ff=d_ff,
+                    max_seq_len=context_length,
+                    rope_theta=rope_theta,
+                )
+            )
+        
+        self.ln_final = RMSNorm(d_model)
+        self.lm_head = Linear(d_model, vocab_size)
+
+    def forward(self, input_ids: Int[Tensor, "... seq_len"]):
+        x = self.token_embeddings(input_ids)
+        for layer in self.layers:
+            x = layer(x)
+        
+        x = self.ln_final(x)
+        logits = self.lm_head(x)
+        return logits
+
