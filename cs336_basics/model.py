@@ -61,7 +61,7 @@ class RMSNorm(nn.Module):
         """
         super().__init__()
         self.eps = eps
-        self.gamma = nn.Parameter(torch.ones(
+        self.weight = nn.Parameter(torch.ones(
             (d_model), dtype=dtype, device=device))
 
     def forward(self, x: Float[Tensor, "... d_model"]):
@@ -72,7 +72,7 @@ class RMSNorm(nn.Module):
         x = x.to(torch.float32)
         mean_square_x = torch.sum(x ** 2, dim=-1, keepdim=True) / dim
         rms_x = torch.sqrt(mean_square_x + self.eps)
-        output = x / rms_x * self.gamma
+        output = x / rms_x * self.weight
 
         # Convert back to original dtype
         return output.to(in_dtype)
@@ -129,8 +129,10 @@ class RotaryPositionalEncoding(nn.Module):
         sin = angles.sin()
         cos = angles.cos()
 
-        self.register_buffer("sin", sin)  # (max_seq_len, d_k // 2)
-        self.register_buffer("cos", cos)
+        # Use persistent=False to exclude them from state_dict.
+        # (max_seq_len, d_k // 2)
+        self.register_buffer("sin", sin, persistent=False)
+        self.register_buffer("cos", cos, persistent=False)
 
     def forward(self,
                 x: Float[Tensor, "batch seq_len d_k"],
@@ -190,7 +192,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.q_proj = Linear(d_model, d_model, device, dtype)
         self.k_proj = Linear(d_model, d_model, device, dtype)
         self.v_proj = Linear(d_model, d_model, device, dtype)
-        self.o_proj = Linear(d_model, d_model, device, dtype)
+        self.output_proj = Linear(d_model, d_model, device, dtype)
 
         # Create causal mask.
         self.mask = torch.tril(torch.ones(
@@ -233,4 +235,20 @@ class MultiHeadSelfAttention(nn.Module):
         output = scaled_dot_product_attention(q, k, v, mask)
         output = rearrange(
             output, "... h seq_len d_v -> ... seq_len (h d_v)")
-        return self.o_proj(output)
+        return self.output_proj(output)
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int, rope_theta: int):
+        super().__init__()
+
+        self.attn = MultiHeadSelfAttention(
+            d_model, num_heads, max_seq_len, rope_theta)
+        self.ln1 = RMSNorm(d_model)
+        self.ffn = FeedForwardNetwork(d_model, d_ff)
+        self.ln2 = RMSNorm(d_model)
+
+    def forward(self, x: Float[Tensor, "... seq_len d_model"]):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+        return x

@@ -149,7 +149,7 @@ def run_multihead_self_attention(
     attn.q_proj.weight.data = q_proj_weight
     attn.k_proj.weight.data = k_proj_weight
     attn.v_proj.weight.data = v_proj_weight
-    attn.o_proj.weight.data = o_proj_weight
+    attn.output_proj.weight.data = o_proj_weight
     return attn(in_features)
 
 
@@ -196,7 +196,7 @@ def run_multihead_self_attention_with_rope(
     attn.q_proj.weight.data = q_proj_weight
     attn.k_proj.weight.data = k_proj_weight
     attn.v_proj.weight.data = v_proj_weight
-    attn.o_proj.weight.data = o_proj_weight
+    attn.output_proj.weight.data = o_proj_weight
     return attn(in_features, token_positions)
 
 
@@ -294,7 +294,11 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerBlock
+    block = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta)
+
+    block.load_state_dict(weights)
+    return block(in_features)
 
 
 def run_transformer_lm(
@@ -401,7 +405,7 @@ def run_rmsnorm(
     """
     from cs336_basics.model import RMSNorm
     rms_norm = RMSNorm(d_model, eps=eps)
-    rms_norm.load_state_dict({"gamma": weights})
+    rms_norm.load_state_dict({"weight": weights})
     return rms_norm(in_features)
 
 
